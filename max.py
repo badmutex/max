@@ -310,22 +310,6 @@ class Result(object):
 
 
 
-class Function(object):
-
-    def header(self):
-        return None
-
-    def read_rcg(path):
-        import dax
-        return dax.read_cannonical(path)
-
-    def __call__(self, path):
-        raise NotImplementedError
-
-
-
-
-
 class Master(object):
 
     STOP = True
