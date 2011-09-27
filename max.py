@@ -16,6 +16,24 @@ import cPickle as pickle
 
 _logger = ezlog.setup(__name__)
 
+def lazy_chunk(iterable, chunksize):
+    if chunksize <= 0:
+        chunksize = 1
+
+    buf = []
+    for val in iterable:
+        buf.append(val)
+        if len(buf) >= chunksize:
+            yield buf
+            buf = []
+    if buf:
+        yield buf
+
+def chunkname(cls, chunkid):
+    return 'chunk-%04d-tar.bz2' % chunkid
+
+
+
 PORT_MASTER = 5678
 PORT_POOL   = 5689
 
@@ -46,7 +64,6 @@ class Task(object):
 
         self.chunkid     = kws.pop('chunkid', 0)
 
-        self._langs      = {'bash' : self._bash}
 
     def to_wq_task(self):
 
@@ -64,18 +81,13 @@ class Task(object):
         if not os.path.exists(Task.WORKAREA):
             os.makedirs(Task.WORKAREA)
 
-        task.specify_output_file(os.path.join(Task.WORKAREA, Task.chunkname(self.chunkid)), Task.WORKER_RESULTS)
+        task.specify_output_file(os.path.join(Task.WORKAREA, chunkname(self.chunkid)), Task.WORKER_RESULTS)
         for outfile in Task.WORKER_RETURN:
             local = os.path.join(Task.WORKAREA, 'chunk-%04d-%s' % (self.chunkid, outfile), outfile)
             task.specify_output_file(local, outfile)
 
         return task
         
-
-
-    @classmethod
-    def chunkname(cls, chunkid):
-        return 'chunk-%04d-tar.bz2' % chunkid
 
 
     def write_worker(self, path):
@@ -230,7 +242,10 @@ function module()
 
 
     def write_wrapper(self, outfile, kind='bash'):
-        if kind not in self._langs:
+
+        langs = {'bash' : self._bash}
+
+        if kind not in langs:
             raise ValueError, 'Unknown kind %s. Try one of %s' % (kind, ' '.join(self._langs.keys()))
 
         lang       = self._langs[kind]
@@ -294,7 +309,7 @@ class Result(object):
 
         cmd = 'tar -C %(workarea)s -xvf %(tarfile)s' % {
             'workarea' : tempdir,
-            'tarfile' : Task.chunkname(chunkid) }
+            'tarfile' : chunkname(chunkid) }
         print 'Executing:', cmd
         os.system(cmd)
 
@@ -441,9 +456,9 @@ class Pool(object):
         pushsocket.connect('tcp://127.0.0.1:%s' % pushport)
         _logger.info('Pool: pushing to %d' % pushport)
 
-        # for i, data in enumerate(chunk(daxdata, chunksize)):
-        #     maxtask = Task(func, data, modules=self.modules, chunkid=i)
-        #     pushsocket.send_pyobj(maxtask)
+        for i, data in enumerate(lazy_chunk(daxdata.trajectories(), chunksize)):
+            maxtask = Task(func, data, modules=self.modules, chunkid=i)
+            pushsocket.send_pyobj(maxtask)
 
         # while True:
 
