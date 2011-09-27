@@ -1,47 +1,13 @@
 
-import ezlog
 import dax
-
-# import workqueue
+import ezlog
 
 import zmq
+import workqueue
 
 import sys
 import itertools
 import multiprocessing
-import cPickle as pickle
-
-
-
-class Connection(object):
-    """
-    Wraps a ZMQ socket for automatic serialization/deserialization of messages
-    """
-
-    def __init__(self, zmq_socket):
-        self.socket = zmq_socket
-
-    def send(self, obj, *args, **kws):
-        """
-        Send the object over the zmq.socket after serialization
-
-        @param obj (object): any pickle-able python object
-        @params *args, **kws: any other arguments to pass to zqm.socket.send
-        """
-        msg = pickle.dumps(obj)
-        self.socket.send(msg, *args, **kws)
-
-    def recv(self, *args, **kws):
-        """
-        Receive a deserialzed message
-
-        @params *args, **kws: any further arguments to be passed to zmq.socket.recv
-        @return (object): an unpickled object
-        """
-
-        msg = self.socket.recv(*args, **kws)
-        obj = pickle.loads(msg)
-        return obj
 
 
 class Task(object):
@@ -202,7 +168,7 @@ function module()
 
 ./%(work)s %(infile)s %(proclogfile)s %(paramfiles)s >%(wqlogfile)s 2>&1
 """ % { 'moduleshome'  : self.moduleshome,
-        'load_modules' : self.modules.get_modules_script()
+        'load_modules' : self.modules.get_modules_script(),
         'work'         : self.workername,
         'infile'       : self.infile,
         'proclogfile'  : self.proclogfile,
@@ -226,8 +192,8 @@ class Modules(object):
 
     def __init__(self, modulefiles = set(), modules = set()):
 
-        self._modulefiles = modulefiels
-        self._modules     = modules()
+        self._modulefiles = modulefiles
+        self._modules     = modules
 
 
     def get_modules_script(self):
@@ -306,11 +272,11 @@ class Master(object):
 
     STOP = True
 
-    def __init__(self, pushport=5559)
+    def __init__(self, pushport=5559):
 
-    self.pushport   = pushport
-    self._protocol = 'tcp'
-    self._addess   = 'localhost'
+        self.pushport  = pushport
+        self._protocol = 'tcp'
+        self._addess   = 'localhost'
 
 
     def address(self, port=None):
@@ -331,22 +297,19 @@ class Master(object):
         context   = zmq.Context()
 
         insocket  = context.socket(zmq.PULL)
-        outsocket = context.socket.zmq.PUSH)
+        outsocket = context.socket(zmq.PUSH)
 
         inport    = insocket.bind_to_random_port(self.address())
         outsocket.bind(self.address(self.pushport))
 
-        inconn    = Connection(insocket)
-        outconn   = Connection(outsocket)
-
         WQ        = workqueue.WorkQueue()
 
 
-        outconn.send(inport)
+        outsocket.send_pyobj(inport)
 
         while True:
 
-            task = inconn.recv(zmq.NOBLOCK)
+            task = insocket.recv(zmq.NOBLOCK)
 
             if task == Master.STOP:
                 break
@@ -363,7 +326,7 @@ class Master(object):
                     result_task = WQ.wait()
                     result      = Result(result_task)
                     result.load()
-                    outconn.send(result)
+                    outsocket.send_pyobj(result)
 
 
 class Pool(object):
@@ -395,25 +358,23 @@ class Pool(object):
 
         pullsocket = context.socket(zmq.PULL)
         pullsocket.bind('tcp://localhost:%s' % self.pullport)
-        pullconn   = Connection(pullsocket)
 
         pushport   = pullsocket.recv()
         pushsocket = context.socket(zmq.PUSH)
         pushsocket.bind('tcp://localhost:%s' % pushport)
-        pushconn   = Connection(pushsocket)
 
         for i, data in enumerate(chunk(daxdata, chunksize)):
             maxtask = Task(func, data, modules=self.modules, chunkid=i)
-            pushconn.send(maxtask)
+            pushsocket.send_pyobj(maxtask)
 
         while True:
 
-            result = pullconn.recv()
+            result = pullsocket.recv()
             for run, clone, gen, results in result:
                 raxdata.add(run, clone, gen, results)
 
         raxdata.write()
-        pushconn.send(Master.STOP)
+        pushsocket.send_pyobj(Master.STOP)
 
 
 
@@ -436,10 +397,9 @@ def worker():
     context = zmq.Context()
     sock    = context.socket(zmq.PULL)
     sock.connect('tcp://*:5559')
-    conn    = Connection(sock)
 
     while True:
-        obj = conn.recv()
+        obj = sock.recv_pyobj()
 
         if type(obj) is bool and not obj:
             break
@@ -454,11 +414,10 @@ def master(n):
     context = zmq.Context()
     sock  = context.socket(zmq.PUSH)
     sock.bind('tcp://*:5559')
-    conn = Connection(sock)
 
     for i in xrange(n):
-        conn.send(i)
-    conn.send(False)
+        sock.send_pyobj(i)
+    sock.send_pyobj(False)
 
 
 
