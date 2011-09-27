@@ -106,7 +106,10 @@ class Task(object):
 
         import sys
         import os
+        import shutil
         import tempfile
+
+        RESULTS_NAME = 'results.tar.bz2'
 
         EXITCODE = 0
 
@@ -172,10 +175,13 @@ class Task(object):
 
             cwd = os.getcwd()
             os.chdir(tempdir)
-            compress = 'tar cvf results.tar.bz2 RUN*'
+
+            fd_log.write('In %s, contents: %s\n' % (tempdir, os.listdir('.')))
+
+            compress = 'tar cvf %s RUN*' % RESULTS_NAME
 
             fd_log.write('Compressing results: %s\n' % compress)
-            fd_log.write('Results file: %s\n' % os.path.join(tempdir, 'results.tar.bz2'))
+            fd_log.write('Results file: %s\n' % os.path.join(tempdir, RESULTS_NAME))
 
             compress_success = os.system(compress)
             if compress_success == 0:
@@ -185,6 +191,13 @@ class Task(object):
 
             os.chdir(cwd)
 
+            fd_log.write('Copying results file %s to WQ Worker workarea %s\n' % (RESULTS_NAME, cwd))
+            shutil.copyfile(os.path.join(tempdir, RESULTS_NAME),
+                            os.path.join(cwd, RESULTS_NAME))
+
+            fd_log.write('Finished. Exiting with %s\n' % EXITCODE)
+
+        shutil.rmtree(tempdir, ignore_errors=True)
         sys.exit(EXITCODE)
 
 
