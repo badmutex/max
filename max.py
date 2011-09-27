@@ -341,7 +341,6 @@ class Master(object):
 
 
     def __call__(self):
-
         _logger.info('Master: starting')
 
         context   = zmq.Context()
@@ -366,7 +365,7 @@ class Master(object):
         while True:
 
             _logger.debug('Master: Getting task')
-            task = insocket.recv()
+            task = insocket.recv_pyobj()
             _logger.debug('Master: Got task %s' % task)
 
             if task == Master.STOP:
@@ -431,7 +430,7 @@ class Pool(object):
 
         _logger.debug('Pool.process: pulling ports to push to')
         print 'waiting'
-        pushport   = pullsocket.recv()
+        pushport   = pullsocket.recv_pyobj()
         print 'OK'
         _logger.debug('Pool.process: got pushport=%d' % pushport)
 
@@ -445,7 +444,7 @@ class Pool(object):
 
         # while True:
 
-        #     result = pullsocket.recv()
+        #     result = pullsocket.recv_pyobj()
         #     for run, clone, gen, results in result:
         #         raxdata.add(run, clone, gen, results)
 
