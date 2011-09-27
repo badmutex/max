@@ -132,7 +132,6 @@ class Task(object):
                 fd_log.write('\tSourcecode: %s\n' % '\n\t\t'.join(inspect.getsource(func).split('\n')))
 
 
-
             for path in paramfiles:
 
                 fd_log.write('Processing: %s\n' % path)
@@ -146,10 +145,13 @@ class Task(object):
                 target_name     = 'GEN%04d.dat' % gen
                 target          = os.path.join(workarea, target_name)
 
+                if not os.path.exists(workarea):
+                    fd_log.write('\tCreating workarea %s\n' % workarea)
+                    os.makedirs(workarea)
+
                 with open(target, 'w') as fd:
 
-                    if type(header) is str and header:
-                        fd.write('# ' + header + '\n')
+                    fd_log.write('\t Applying %s\n' % func)
 
                     try:
                         results = func(path)
@@ -169,10 +171,11 @@ class Task(object):
 
 
             cwd = os.getcwd()
-            os.chdir(workarea)
+            os.chdir(tempdir)
             compress = 'tar cvf results.tar.bz2 RUN*'
 
             fd_log.write('Compressing results: %s\n' % compress)
+            fd_log.write('Results file: %s\n' % os.path.join(tempdir, 'results.tar.bz2'))
 
             compress_success = os.system(compress)
             if compress_success == 0:
@@ -498,7 +501,7 @@ def test():
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
-    data   = 'RUN0001/CLONE0002/GEN0003 RUN0004/CLONE0005/GEN0006'.split()
+    data   = 'foo/RUN0001/CLONE0002/GEN0003 foo/RUN0004/CLONE0005/GEN0006'.split()
     task   = Task(MyFunc, data)
     wqtask = task.to_wq_task()
 
