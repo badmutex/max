@@ -5,9 +5,17 @@ import ezlog
 import zmq
 import workqueue
 
+import os
+import stat
 import sys
+import inspect
+import marshal
 import itertools
 import multiprocessing
+import cPickle as pickle
+
+_logger = ezlog.setup(__name__)
+ezlog.set_level(ezlog.DEBUG, __name__)
 
 
 class Task(object):
@@ -25,7 +33,7 @@ class Task(object):
 
     def __init__(self, func, data, **kws):
 
-        self.function    = function
+        self.function    = func
         self.data        = data
 
         self.modules     = kws.pop('modules', Modules())
@@ -43,7 +51,9 @@ class Task(object):
 
         self.write_wrapper(Task.WRAPPER_NAME)
         self.write_worker(Task.WORKER_NAME)
-        pickle.dump(self.function, Task.IN_NAME)
+
+        with open(Task.IN_NAME, 'w') as fd:
+            marshal.dump(self.function.func_code, fd)
 
         task = workqueue.Task('./%(wrapper)s >wq.log' % {'wrapper' : Task.WRAPPER_NAME})
         task.specify_input_file(Task.WRAPPER_NAME, Task.WRAPPER_NAME)
@@ -53,7 +63,7 @@ class Task(object):
         if not os.path.exists(Task.WORKAREA):
             os.makedirs(Task.WORKAREA)
 
-        task.specify_output_file(os.path.join(Task.WORKAREA, Task.chunkname(self.id)), Task.WORKER_RESULTS)
+        task.specify_output_file(os.path.join(Task.WORKAREA, Task.chunkname(self.chunkid)), Task.WORKER_RESULTS)
         for outfile in Task.WORKER_RETURN:
             local = os.path.join(Task.WORKAREA, 'chunk-%04d-%s' % (self.chunkid, outfile), outfile)
             task.specify_output_file(local, outfile)
@@ -69,7 +79,19 @@ class Task(object):
 
     def write_worker(self, path):
 
-        code = inspect.getsource(self._pyworker)
+        code = inspect.getsource(self._pyworker).split('\n')
+
+        # remove the def ...
+        code = code[1:]
+
+        # shift everything over by 2 tabs
+        code = map(lambda s: s.replace(' ','', 8), code)
+
+        _logger.debug('Task.write_worker: code:')
+        for line in code:
+            _logger.debug('\t' + line)
+
+        code = '\n'.join(code)
 
         with open(path, 'w') as fd:
             fd.write('#!/usr/bin/env python\n\n')
@@ -78,7 +100,9 @@ class Task(object):
         os.chmod(path, stat.S_IRWXU)
 
     def _pyworker(self):
-        import cPickle as pickle
+        import dax
+
+        import marshal, types, inspect
 
         import sys
         import os
@@ -94,18 +118,27 @@ class Task(object):
 
         with open(outfile, 'w') as fd_log:
 
+            fd_log.write('Using python version %s\n' % ' '.join(sys.version.split('\n')))
+
             fd_log.write('Loading function and arguments\n')
-            func = pickle.load(infile)
+            with open(infile) as fd:
+                code = marshal.load(fd)
+                func = types.FunctionType(code, locals(), 'userfunc')
+
+                fd_log.write('Loaded function\n')
+                fd_log.write('\tType: %s\n' % type(code))
+                fd_log.write('\tCode: %s\n' % code)
+                fd_log.write('\tFunction: %s\n' % func)
+                fd_log.write('\tSourcecode: %s\n' % '\n\t\t'.join(inspect.getsource(func).split('\n')))
+
 
 
             for path in paramfiles:
 
                 fd_log.write('Processing: %s\n' % path)
 
-                header          = func.header()
-                run, clone, gen = func.read_rcg(path)
+                run, clone, gen = dax.read_cannonical(path)
 
-                fd_log.write('\tHeader: %s\n' % header)
                 fd_log.write('\tRUN %d CLONE %d GEN %d\n' % (run,clone,gen))
 
                 workarea        = dax.cannonical_traj(run, clone)
@@ -176,6 +209,8 @@ function module()
         'wqlogfile'    : self.wqwlogfile,
         }
 
+        return bash
+
 
     def write_wrapper(self, outfile, kind='bash'):
         if kind not in self._langs:
@@ -184,8 +219,14 @@ function module()
         lang       = self._langs[kind]
         executable = lang()
 
+        _logger.debug('Task.write_wrapper: executable:')
+        for line in executable.split('\n'):
+            _logger.debug('\t' + line)
+
         with open(outfile, 'w') as fd:
             fd.write(executable)
+
+        os.chmod(outfile, stat.S_IRWXU)
 
 
 class Modules(object):
@@ -439,13 +480,29 @@ def main():
     print 'Message/sec:', msg_per_sec
 
 
-def test():
+def test_module():
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'scipy', 'ezlog/deve', 'ezpool/devel')
     modules.add_modulefiles('~rnowling/Public/modulefiles')
     modules.add_modules('protomol/a', 'protomol/b')
     print modules.get_modules_script()
+
+
+def MyFunc(path):
+        import numpy as np
+        return np.random.random_sample(42)
+
+
+def test():
+    modules = Modules()
+    modules.add_modulefiles('~/Public/modulefiles')
+    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+    data   = 'RUN0001/CLONE0002/GEN0003 RUN0004/CLONE0005/GEN0006'.split()
+    task   = Task(MyFunc, data)
+    wqtask = task.to_wq_task()
+
+    
 
 
 if __name__ == '__main__':
