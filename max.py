@@ -29,7 +29,7 @@ def lazy_chunk(iterable, chunksize):
     if buf:
         yield buf
 
-def chunkname(cls, chunkid):
+def chunkname(chunkid):
     return 'chunk-%04d-tar.bz2' % chunkid
 
 
@@ -330,11 +330,12 @@ class Master(object):
 
     STOP = True
 
-    def __init__(self, pushport=5559):
+    def __init__(self, name, pushport=5559):
 
+        self.name      = name
         self.pushport  = pushport
         self._protocol = 'tcp'
-        self._address   = '127.0.0.1'
+        self._address  = '127.0.0.1'
 
 
     def address(self, port=None):
@@ -369,7 +370,8 @@ class Master(object):
         outsocket.connect(self.address(self.pushport))
         # outsocket.bind(self.address(PORT_MASTER))
 
-        WQ        = workqueue.WorkQueue(workqueue.WORK_QUEUE_RANDOM_PORT)
+        _logger.info('Master: WQ name: %s' % self.name)
+        WQ        = workqueue.WorkQueue(workqueue.WORK_QUEUE_RANDOM_PORT, name=self.name)
 
         _logger.info('Master: PULLing from %s' % self.address(inport))
         _logger.info('Master: PUSHing to %s' % self.address(self.pushport))
@@ -411,7 +413,7 @@ class Master(object):
 class Pool(object):
 
 
-    def __init__(self, modules=Modules()):
+    def __init__(self, modules=Modules(), name=__name__):
 
         self.modules = modules
 
@@ -421,12 +423,13 @@ class Pool(object):
 
         self._masters = list()
         self._masterloads = dict()
+        self._name = name
 
     def start_masters(self, n=1):
 
         _logger.debug('Pool.start_masters: starting %d masters pushing to %d' % (n, self.pullport))
 
-        master = Master(pushport = self.pullport)
+        master = Master(self._name, pushport = self.pullport)
         master_proc = multiprocessing.Process(target=master)
         master_proc.start()
 
@@ -455,15 +458,16 @@ class Pool(object):
         pushsocket.connect('tcp://127.0.0.1:%s' % pushport)
         _logger.info('Pool: pushing to %d' % pushport)
 
-        for i, data in enumerate(daxdata):
+        for i, data in enumerate(lazy_chunk(daxdata, chunksize)):
             _logger.debug('Pool.process: chunk=%d data=%s' % (i, data) )
             maxtask = Task(func, data, modules=self.modules, chunkid=i)
             pushsocket.send_pyobj(maxtask)
 
-        # while True:
+        while True:
 
-        #     result = pullsocket.recv_pyobj()
-        #     for run, clone, gen, results in result:
+            result = pullsocket.recv_pyobj()
+            for run, clone, gen, results in result:
+                _logger.debug('Pool.process: got result for (%d,%d,%d)' % (run,clone,gen))
         #         raxdata.add(run, clone, gen, results)
 
         # raxdata.write()
@@ -602,13 +606,13 @@ def test():
     daxproj.load_file(read_path, 'p10009.xtclist.test')
     data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
 
-    pool = Pool(modules=modules)
-    pool.process(data, MyFunc, None)
+    pool = Pool(modules=modules, name='max')
+    pool.process(data, MyFunc, None, chunksize=500)
 
 
 
 if __name__ == '__main__':
-    ezlog.set_level(ezlog.DEBUG, __name__)
+    ezlog.set_level(ezlog.INFO, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
     test()
 
