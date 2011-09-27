@@ -348,19 +348,19 @@ class Master(object):
         insocket  = context.socket(zmq.PULL)
         outsocket = context.socket(zmq.PUSH)
 
-        # inport    = PORT_POOL
-        # insocket.bind(self.address(inport))
-        inport    = insocket.bind_to_random_port(self.address())
+        inport    = PORT_POOL
+        insocket.bind(self.address(inport))
+        # inport    = insocket.bind_to_random_port(self.address())
         outsocket.connect(self.address(self.pushport))
         # outsocket.bind(self.address(PORT_MASTER))
 
-        WQ        = workqueue.WorkQueue()
+        WQ        = workqueue.WorkQueue(workqueue.WORK_QUEUE_RANDOM_PORT)
 
         _logger.info('Master: PULLing from %s' % self.address(inport))
         _logger.info('Master: PUSHing to %s' % self.address(self.pushport))
 
         _logger.info('Master: Sending my listening port %d to the pool' % inport)
-        outsocket.send_pyobj(inport)
+        outsocket.send_pyobj(inport, zmq.NOBLOCK)
 
         while True:
 
@@ -388,6 +388,10 @@ class Master(object):
                     result      = Result(result_task)
                     result.load()
                     outsocket.send_pyobj(result)
+
+        _logger.info('Master: finishing up')
+        insocket.close()
+        outsocket.close()
 
 
 class Pool(object):
@@ -429,9 +433,8 @@ class Pool(object):
         _logger.info('Pool: pulling from %d' % self.pullport)
 
         _logger.debug('Pool.process: pulling ports to push to')
-        print 'waiting'
-        pushport   = pullsocket.recv_pyobj()
-        print 'OK'
+        # pushport   = pullsocket.recv_pyobj()
+        pushport = PORT_POOL
         _logger.debug('Pool.process: got pushport=%d' % pushport)
 
         pushsocket = context.socket(zmq.PUSH)
@@ -450,8 +453,16 @@ class Pool(object):
 
         # raxdata.write()
 
-        _logger.info('Pool.process: sending STOP message to Masters')
+        _logger.info('Pool: sending STOP message to Masters')
         pushsocket.send_pyobj(Master.STOP)
+        pullsocket.close()
+        pushsocket.close()
+
+        _logger.info('Pool: stopping Master(s)')
+        self._master.join(10)
+        self._master.terminate()
+
+        _logger.info('Pool: Done')
 
 
 
