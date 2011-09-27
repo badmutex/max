@@ -246,9 +246,9 @@ function module()
         langs = {'bash' : self._bash}
 
         if kind not in langs:
-            raise ValueError, 'Unknown kind %s. Try one of %s' % (kind, ' '.join(self._langs.keys()))
+            raise ValueError, 'Unknown kind %s. Try one of %s' % (kind, ' '.join(langs.keys()))
 
-        lang       = self._langs[kind]
+        lang       = langs[kind]
         executable = lang()
 
         _logger.debug('Task.write_wrapper: executable:')
@@ -389,7 +389,6 @@ class Master(object):
 
             elif task:
                 _logger.debug('Master: Received Task %s' % type(task))
-                task.materialize()
                 wqtask = task.to_wq_task()
 
                 WQ.submit(wqtask)
@@ -456,7 +455,8 @@ class Pool(object):
         pushsocket.connect('tcp://127.0.0.1:%s' % pushport)
         _logger.info('Pool: pushing to %d' % pushport)
 
-        for i, data in enumerate(lazy_chunk(daxdata.trajectories(), chunksize)):
+        for i, data in enumerate(daxdata):
+            _logger.debug('Pool.process: chunk=%d data=%s' % (i, data) )
             maxtask = Task(func, data, modules=self.modules, chunkid=i)
             pushsocket.send_pyobj(maxtask)
 
@@ -600,14 +600,16 @@ def test():
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
     daxproj.load_file(read_path, 'p10009.xtclist.test')
+    data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
 
     pool = Pool(modules=modules)
-    pool.process(daxproj, MyFunc, None)
+    pool.process(data, MyFunc, None)
 
 
 
 if __name__ == '__main__':
     ezlog.set_level(ezlog.DEBUG, __name__)
+    ezlog.set_level(ezlog.INFO, dax.__name__)
     test()
 
 
