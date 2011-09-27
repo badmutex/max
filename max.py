@@ -16,6 +16,9 @@ import cPickle as pickle
 
 _logger = ezlog.setup(__name__)
 
+PORT_MASTER = 5678
+PORT_POOL   = 5689
+
 class Task(object):
 
     WRAPPER_NAME        = 'wrapper.sh'
@@ -320,7 +323,7 @@ class Master(object):
 
 
     def address(self, port=None):
-        _logger.debug('Master.address: protocol=%s address=%s port=%s' % (self._protocol, self._address, port))
+        # _logger.debug('Master.address: protocol=%s address=%s port=%s' % (self._protocol, self._address, port))
 
         if port is None: portstr = ''
         else:            portstr = ':%d' % port
@@ -339,35 +342,39 @@ class Master(object):
 
     def __call__(self):
 
-        _logger.info('Starting master')
+        _logger.info('Master: starting')
 
         context   = zmq.Context()
 
         insocket  = context.socket(zmq.PULL)
         outsocket = context.socket(zmq.PUSH)
 
+        # inport    = PORT_POOL
+        # insocket.bind(self.address(inport))
         inport    = insocket.bind_to_random_port(self.address())
-        outsocket.bind(self.address(self.pushport))
+        outsocket.connect(self.address(self.pushport))
+        # outsocket.bind(self.address(PORT_MASTER))
 
         WQ        = workqueue.WorkQueue()
 
-        _logger.info('\tPULLing from %s' % self.address(inport))
-        _logger.info('\tPUSHing to %s' % self.address(self.pushport))
+        _logger.info('Master: PULLing from %s' % self.address(inport))
+        _logger.info('Master: PUSHing to %s' % self.address(self.pushport))
 
+        _logger.info('Master: Sending my listening port %d to the pool' % inport)
         outsocket.send_pyobj(inport)
 
         while True:
 
-            _logger.debug('\tGetting task')
-            task = insocket.recv(zmq.NOBLOCK)
-            _logger.debug('\t\tGot %s' % task)
+            _logger.debug('Master: Getting task')
+            task = insocket.recv()
+            _logger.debug('Master: Got task %s' % task)
 
             if task == Master.STOP:
-                _logger.info('\tRecieved STOP')
+                _logger.info('Master: Recieved STOP')
                 break
 
             elif task:
-                _logger.debug('\tReceived Task %s' % type(task))
+                _logger.debug('Master: Received Task %s' % type(task))
                 task.materialize()
                 wqtask = task.to_wq_task()
 
@@ -375,7 +382,7 @@ class Master(object):
 
             else:
 
-                _logger.info('\tNo new work, pulling from WQ')
+                _logger.info('Master: No new work, pulling from WQ')
 
                 while not WQ.empty():
                     result_task = WQ.wait()
@@ -400,35 +407,51 @@ class Pool(object):
 
     def start_masters(self, n=1):
 
+        _logger.debug('Pool.start_masters: starting %d masters pushing to %d' % (n, self.pullport))
+
         master = Master(pushport = self.pullport)
-        master_proc = Process(master)
+        master_proc = multiprocessing.Process(target=master)
+        master_proc.start()
+
+        _logger.debug('Pool.start_masters: OK')
         self._master = master_proc
 
 
-    def process(daxdata, func, raxdata, chunksize=42):
+    def process(self, daxdata, func, raxdata, chunksize=42):
 
         self.start_masters()
+
+        _logger.info('Pool: Mapping %s -> %s using %s with chunksize=%d' % (daxdata, raxdata, func, chunksize))
 
         context    = zmq.Context()
 
         pullsocket = context.socket(zmq.PULL)
-        pullsocket.bind('tcp://localhost:%s' % self.pullport)
+        pullsocket.connect('tcp://127.0.0.1:%s' % self.pullport)
+        _logger.info('Pool: pulling from %d' % self.pullport)
 
+        _logger.debug('Pool.process: pulling ports to push to')
+        print 'waiting'
         pushport   = pullsocket.recv()
+        print 'OK'
+        _logger.debug('Pool.process: got pushport=%d' % pushport)
+
         pushsocket = context.socket(zmq.PUSH)
-        pushsocket.bind('tcp://localhost:%s' % pushport)
+        pushsocket.connect('tcp://127.0.0.1:%s' % pushport)
+        _logger.info('Pool: pushing to %d' % pushport)
 
-        for i, data in enumerate(chunk(daxdata, chunksize)):
-            maxtask = Task(func, data, modules=self.modules, chunkid=i)
-            pushsocket.send_pyobj(maxtask)
+        # for i, data in enumerate(chunk(daxdata, chunksize)):
+        #     maxtask = Task(func, data, modules=self.modules, chunkid=i)
+        #     pushsocket.send_pyobj(maxtask)
 
-        while True:
+        # while True:
 
-            result = pullsocket.recv()
-            for run, clone, gen, results in result:
-                raxdata.add(run, clone, gen, results)
+        #     result = pullsocket.recv()
+        #     for run, clone, gen, results in result:
+        #         raxdata.add(run, clone, gen, results)
 
-        raxdata.write()
+        # raxdata.write()
+
+        _logger.info('Pool.process: sending STOP message to Masters')
         pushsocket.send_pyobj(Master.STOP)
 
 
@@ -451,7 +474,10 @@ def worker():
 
     context = zmq.Context()
     sock    = context.socket(zmq.PULL)
-    sock.connect('tcp://*:5559')
+    sock.connect('tcp://*:%d' % PORT_MASTER)
+
+    outsock = context.socket(zmq.PUSH)
+    outsock.bind('tcp://*:%d' % PORT_POOL)
 
     while True:
         obj = sock.recv_pyobj()
@@ -461,6 +487,8 @@ def worker():
         # else:
         #     print 'worker: got object', type(obj), obj
 
+    outsock.send_pyobj('OK')
+
 
 def master(n):
 
@@ -468,11 +496,16 @@ def master(n):
 
     context = zmq.Context()
     sock  = context.socket(zmq.PUSH)
-    sock.bind('tcp://*:5559')
+    sock.bind('tcp://*:%d' % PORT_MASTER)
+
+    insock = context.socket(zmq.PULL)
+    insock.connect('tcp://*:%d' % PORT_POOL)
 
     for i in xrange(n):
         sock.send_pyobj(i)
     sock.send_pyobj(False)
+    res = insock.recv_pyobj()
+    print 'Master got', res
 
 
 
@@ -522,11 +555,34 @@ def test_start_master():
 
 
 def test():
-    pass
+
+    modules = Modules()
+    modules.add_modulefiles('~/Public/modulefiles')
+    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+
+    def read_path(path):
+        import re
+        re_gen = re.compile(r'%(sep)sresults-([0-9]+)' % {'sep':os.sep})
+        r,c = dax.read_cannonical_traj(path)
+        m = re_gen.search(path)
+
+        if not m:
+            raise ValueError, 'Cannot parse generation from %s' % path
+
+        g = int(m.group(1))
+
+        return r,c,g
+
+    daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
+    daxproj.load_file(read_path, 'p10009.xtclist.test')
+
+    pool = Pool(modules=modules)
+    pool.process(daxproj, MyFunc, None)
+
 
 
 if __name__ == '__main__':
-    # ezlog.set_level(ezlog.DEBUG, __name__)
+    ezlog.set_level(ezlog.DEBUG, __name__)
     test()
 
 
