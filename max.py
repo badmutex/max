@@ -190,7 +190,7 @@ function module()
 
 class Modules(object):
 
-    def __init__(self, modulefiles = set(), modules = set()):
+    def __init__(self, modulefiles = list(), modules = list()):
 
         self._modulefiles = modulefiles
         self._modules     = modules
@@ -200,13 +200,13 @@ class Modules(object):
 
         def get_str():
 
-            for modulefilesgroup, modulesgroup in itertools.izip_longest(self._modulefiles, self._modules, None):
+            for modulefilesgroup, modulesgroup in itertools.izip_longest(self._modulefiles, self._modules, fillvalue=None):
 
                 if modulefilesgroup is not None:
                     for modulefile in modulefilesgroup:
                         yield 'module use %s' % modulefile
 
-                if modulesgroups is not None:
+                if modulesgroup is not None:
                     for module in modulesgroup:
                         yield 'module load %s' % module
 
@@ -214,10 +214,11 @@ class Modules(object):
 
 
     def add_modulefiles(self, *paths):
-        self._modulefiles.append(list(paths))
+        sanitized = map(dax.sanitize, paths)
+        self._modulefiles.append(sanitized)
 
     def add_modules(self, *modules):
-        self._modules.append(list(modules))
+        self._modules.append(modules)
 
 
 
@@ -438,8 +439,17 @@ def main():
     print 'Message/sec:', msg_per_sec
 
 
+def test():
+    modules = Modules()
+    modules.add_modulefiles('~/Public/modulefiles')
+    modules.add_modules('python/2.7.1', 'numpy', 'scipy', 'ezlog/deve', 'ezpool/devel')
+    modules.add_modulefiles('~rnowling/Public/modulefiles')
+    modules.add_modules('protomol/a', 'protomol/b')
+    print modules.get_modules_script()
+
+
 if __name__ == '__main__':
-    main()
+    test()
 
 
 # if __name__ == '__main__':
