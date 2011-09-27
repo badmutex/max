@@ -15,8 +15,6 @@ import multiprocessing
 import cPickle as pickle
 
 _logger = ezlog.setup(__name__)
-ezlog.set_level(ezlog.DEBUG, __name__)
-
 
 class Task(object):
 
@@ -318,23 +316,30 @@ class Master(object):
 
         self.pushport  = pushport
         self._protocol = 'tcp'
-        self._addess   = 'localhost'
+        self._address   = '127.0.0.1'
 
 
     def address(self, port=None):
-        return '%(protocol)://%(address)%(port)s' % {
+        _logger.debug('Master.address: protocol=%s address=%s port=%s' % (self._protocol, self._address, port))
+
+        if port is None: portstr = ''
+        else:            portstr = ':%d' % port
+
+        return '%(protocol)s://%(address)s%(port)s' % {
             'protocol' : self._protocol,
             'address' : self._address,
-            'port' : '' if port is None else ':%d' % port }
+            'port' : portstr }
 
     def input_files(self, *paths):
         raise NotImplementedError
 
-    def output_fiels(self, *paths):
+    def output_files(self, *paths):
         raise NotImplementedError
 
 
     def __call__(self):
+
+        _logger.info('Starting master')
 
         context   = zmq.Context()
 
@@ -346,23 +351,31 @@ class Master(object):
 
         WQ        = workqueue.WorkQueue()
 
+        _logger.info('\tPULLing from %s' % self.address(inport))
+        _logger.info('\tPUSHing to %s' % self.address(self.pushport))
 
         outsocket.send_pyobj(inport)
 
         while True:
 
+            _logger.debug('\tGetting task')
             task = insocket.recv(zmq.NOBLOCK)
+            _logger.debug('\t\tGot %s' % task)
 
             if task == Master.STOP:
+                _logger.info('\tRecieved STOP')
                 break
 
             elif task:
+                _logger.debug('\tReceived Task %s' % type(task))
                 task.materialize()
                 wqtask = task.to_wq_task()
 
                 WQ.submit(wqtask)
 
             else:
+
+                _logger.info('\tNo new work, pulling from WQ')
 
                 while not WQ.empty():
                     result_task = WQ.wait()
@@ -503,13 +516,17 @@ def test_Task():
     wqtask = task.to_wq_task()
 
 
+def test_start_master():
+    master = Master()
+    master()
+
+
 def test():
     pass
 
-    
-
 
 if __name__ == '__main__':
+    # ezlog.set_level(ezlog.DEBUG, __name__)
     test()
 
 
