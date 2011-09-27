@@ -494,13 +494,17 @@ def MyFunc(path):
         return np.random.random_sample(42)
 
 
-def test():
+def test_Task():
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
     data   = 'foo/RUN0001/CLONE0002/GEN0003 foo/RUN0004/CLONE0005/GEN0006'.split()
     task   = Task(MyFunc, data)
     wqtask = task.to_wq_task()
+
+
+def test():
+    pass
 
     
 
