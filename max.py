@@ -427,7 +427,7 @@ class Mapper(object):
 
 
 
-def test_module():
+def _test_module():
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'scipy', 'ezlog/deve', 'ezpool/devel')
@@ -436,25 +436,25 @@ def test_module():
     print modules.get_modules_script()
 
 
-def MyFunc(path):
+def _test_MyFunc(path):
         import numpy as np
         return np.random.random_sample(42)
 
 
-def test_Task():
+def _test_Task():
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
     data   = 'foo/RUN0001/CLONE0002/GEN0003 foo/RUN0004/CLONE0005/GEN0006'.split()
-    task   = Task(MyFunc, data)
+    task   = Task(_test_MyFunc, data)
     wqtask = task.to_wq_task()
 
 
-def test_start_master():
+def _test_start_master():
     master = Master()
     master()
 
-def test_dax_read_path(path):
+def _test_dax_read_path(path):
     import re
     re_gen = re.compile(r'%(sep)sresults-([0-9]+)' % {'sep':os.sep})
     r,c = dax.read_cannonical_traj(path)
@@ -469,22 +469,22 @@ def test_dax_read_path(path):
 
 
 
-def test_pool():
+def _test_pool():
 
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
-    daxproj.load_file(test_dax_read_path, 'p10009.xtclist.test2')
+    daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
     data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
 
     pool = Pool(modules=modules, name='max')
-    pool.process(data, MyFunc, None, chunksize=5)
+    pool.process(data, _test_MyFunc, None, chunksize=5)
 
 
 
-def test_wq():
+def _test_wq():
     master = Master(debug='all')
 
     modules = Modules()
@@ -492,12 +492,12 @@ def test_wq():
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
-    daxproj.load_file(test_dax_read_path, 'p10009.xtclist.test2')
+    daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
     data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
     data = lazy_chunk(data, 5)
 
     for i, d in enumerate(data):
-        task = Task(MyFunc, d, modules=modules, chunkid=i)
+        task = Task(_test_MyFunc, d, modules=modules, chunkid=i)
         master.submit(task)
 
     print 'Getting results'
@@ -508,11 +508,11 @@ def test_wq():
         except WaitExceeded: pass
 
 
-def test_marshaling():
+def _test_marshaling():
     import marshal, types
 
     with open('test.pkl', 'w') as fd:
-        marshal.dump(MyFunc.func_code, fd)
+        marshal.dump(_test_MyFunc.func_code, fd)
 
     with open('test.pkl') as fd:
         code = marshal.load(fd)
@@ -522,21 +522,21 @@ def test_marshaling():
     print func(42)
 
 
-def test():
+def _test():
 
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
-    daxproj.load_file(test_dax_read_path, 'p10009.xtclist.test2')
+    daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
     data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
 
-    mapper = Mapper(MyFunc, modules)
+    mapper = Mapper(_test_MyFunc, modules)
     mapper.process(data, None, chunksize=5)
 
 
 if __name__ == '__main__':
     ezlog.set_level(ezlog.INFO, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
-    test()
+    _test()
