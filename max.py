@@ -335,94 +335,6 @@ class Result(object):
         shutil.rmtree(self.tempdir, ignore_errors=True)
 
 
-class Master(object):
-
-    STOP = True
-
-    def __init__(self, name, pushport=5559):
-
-        self.name      = name
-        self.pushport  = pushport
-        self._protocol = 'tcp'
-        self._address  = '127.0.0.1'
-
-
-    def address(self, port=None):
-        # _logger.debug('Master.address: protocol=%s address=%s port=%s' % (self._protocol, self._address, port))
-
-        if port is None: portstr = ''
-        else:            portstr = ':%d' % port
-
-        return '%(protocol)s://%(address)s%(port)s' % {
-            'protocol' : self._protocol,
-            'address' : self._address,
-            'port' : portstr }
-
-    def input_files(self, *paths):
-        raise NotImplementedError
-
-    def output_files(self, *paths):
-        raise NotImplementedError
-
-
-    def __call__(self):
-        _logger.info('Master: starting')
-
-        context   = zmq.Context()
-
-        insocket  = context.socket(zmq.PULL)
-        outsocket = context.socket(zmq.PUSH)
-
-        inport    = PORT_POOL
-        insocket.bind(self.address(inport))
-        # inport    = insocket.bind_to_random_port(self.address())
-        outsocket.connect(self.address(self.pushport))
-        # outsocket.bind(self.address(PORT_MASTER))
-
-        _logger.info('Master: WQ name: %s' % self.name)
-        WQ        = workqueue.WorkQueue(port=9987, # workqueue.WORK_QUEUE_RANDOM_PORT,
-                                        name='max', catalog=True, exclusive=False)
-        WQ.specify_algorithm(workqueue.WORK_QUEUE_SCHEDULE_FCFS)
-        workqueue.set_debug_flag('all')
-
-        _logger.info('Master: PULLing from %s' % self.address(inport))
-        _logger.info('Master: PUSHing to %s' % self.address(self.pushport))
-
-        _logger.info('Master: Sending my listening port %d to the pool' % inport)
-        # outsocket.send_pyobj(inport, zmq.NOBLOCK)
-
-        while True:
-
-            _logger.debug('Master: Getting task')
-            task = insocket.recv_pyobj()
-            _logger.debug('Master: Got task %s' % task)
-
-            if task == Master.STOP:
-                _logger.info('Master: Recieved STOP')
-                break
-
-            elif task:
-                _logger.debug('Master: Received Task %s' % type(task))
-                wqtask = task.to_wq_task()
-
-                _logger.debug('Master: submitting task to WorkQueue')
-                WQ.submit(wqtask)
-
-            else:
-
-                _logger.info('Master: No new work, pulling from WQ')
-
-                while not WQ.empty():
-                    result_task = WQ.wait()
-                    result      = Result(result_task)
-                    result.load()
-                    outsocket.send_pyobj(result)
-
-        _logger.info('Master: finishing up')
-        insocket.close()
-        outsocket.close()
-
-
 
 class WaitExceeded (Exception): pass
 
@@ -492,86 +404,27 @@ class PyMaster(object):
 
 
 
-class Pool(object):
 
+class Mapper(object):
 
-    def __init__(self, modules=Modules(), name=__name__):
+    def __init__(self, function, modules=Modules(), master=PyMaster(debug='all')):
 
-        self.modules = modules
+        self.function = function
+        self.modules  = modules
+        self.master   = master
 
-        self._wqpool = None
+    def process(self, daxdata, raxproject, chunksize=1):
 
-        self.pullport = 5559
+        for chunkid, chunk in enumerate(lazy_chunk(daxdata, chunksize)):
+            task = Task(self.function, chunk, modules=self.modules, chunkid=chunkid)
+            self.master.submit(task)
 
-        self._masters = list()
-        self._masterloads = dict()
-        self._name = name
-
-    def start_masters(self, n=1):
-
-        _logger.debug('Pool.start_masters: starting %d masters pushing to %d' % (n, self.pullport))
-
-        master = Master(self._name, pushport = self.pullport)
-        master_proc = multiprocessing.Process(target=master)
-        master_proc.start()
-
-        _logger.debug('Pool.start_masters: OK')
-        self._master = master_proc
-
-
-    def process(self, daxdata, func, raxdata, chunksize=42):
-
-        self.start_masters()
-
-        _logger.info('Pool: Mapping %s -> %s using %s with chunksize=%d' % (daxdata, raxdata, func, chunksize))
-
-        context    = zmq.Context()
-
-        pullsocket = context.socket(zmq.PULL)
-        pullsocket.connect('tcp://127.0.0.1:%s' % self.pullport)
-        _logger.info('Pool: pulling from %d' % self.pullport)
-
-        _logger.debug('Pool.process: pulling ports to push to')
-        # pushport   = pullsocket.recv_pyobj()
-        pushport = PORT_POOL
-        _logger.debug('Pool.process: got pushport=%d' % pushport)
-
-        pushsocket = context.socket(zmq.PUSH)
-        pushsocket.connect('tcp://127.0.0.1:%s' % pushport)
-        _logger.info('Pool: pushing to %d' % pushport)
-
-        for i, data in enumerate(lazy_chunk(daxdata, chunksize)):
-            _logger.debug('Pool.process: chunk=%d data=%s' % (i, data) )
-            maxtask = Task(func, data, modules=self.modules, chunkid=i)
-            pushsocket.send_pyobj(maxtask)
-
-        while True:
-
-            result = pullsocket.recv_pyobj()
-            for run, clone, gen, results in result:
-                _logger.debug('Pool.process: got result for (%d,%d,%d)' % (run,clone,gen))
-        #         raxdata.add(run, clone, gen, results)
-
-        # raxdata.write()
-
-        _logger.info('Pool: sending STOP message to Masters')
-        pushsocket.send_pyobj(Master.STOP)
-        pullsocket.close()
-        pushsocket.close()
-
-        _logger.info('Pool: stopping Master(s)')
-        self._master.join(10)
-        self._master.terminate()
-
-        _logger.info('Pool: Done')
-
-
-
-
-
-
-
-
+        ## TODO: put results into R@X Project
+        while not self.master.empty():
+            try:
+                for result in self.master.recv():
+                    print result
+            except WaitExceeded: pass
 
 
 
@@ -733,43 +586,21 @@ def test_marshaling():
 
 
 def test():
-    pass
+
+    modules = Modules()
+    modules.add_modulefiles('~/Public/modulefiles')
+    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+
+    daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
+    daxproj.load_file(test_dax_read_path, 'p10009.xtclist.test2')
+    data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
+
+    mapper = Mapper(MyFunc, modules)
+    mapper.process(data, None, chunksize=5)
 
 
 if __name__ == '__main__':
     ezlog.set_level(ezlog.DEBUG, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
-    test_wq()
+    test()
 
-
-# if __name__ == '__main__':
-
-#     daxdata  = sys.argv[1]
-#     mapperfn = sys.argv[2]
-#     raxdata  = sys.argv[3]
-
-
-#     setup_mapper(mapperfn)
-#     from locale_max_mapper import mapper as max_mapper
-
-
-#     daxproj = dax.Project()
-#     daxproj.load_dax(daxdata)
-
-#     master = Master()
-#     master.start(max_mapper, daxproj)
-
-#     raxproj = rax.Project()
-#     raxproj.set_prefix(raxdata)
-
-#     while True:
-
-#         if master.isfinished():
-#             break
-
-#         result = master.recv()
-#         raxproj.add_max(result)
-
-
-
-#     raxproj.write_rax()
