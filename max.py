@@ -37,10 +37,6 @@ def chunkname(chunkid):
     return 'chunk-%04d-tar.bz2' % chunkid
 
 
-
-PORT_MASTER = 5678
-PORT_POOL   = 5689
-
 class Task(object):
 
     WRAPPER_NAME        = 'wrapper.sh'
@@ -339,7 +335,7 @@ class Result(object):
 class WaitExceeded (Exception): pass
 
 
-class PyMaster(object):
+class Master(object):
     """
     Wrapper around WQ master
     """
@@ -357,7 +353,7 @@ class PyMaster(object):
 
     def start(self):
 
-        _logger.debug('PyMaster: Starting')
+        _logger.debug('Master: Starting')
 
         wq = workqueue.WorkQueue(port=self.port,
                                  name=self.name,
@@ -373,10 +369,10 @@ class PyMaster(object):
         if self._wq is None:
             self.start()
 
-        _logger.debug('PyMaster: submitting task %s' % maxtask)
+        _logger.debug('Master: submitting task %s' % maxtask)
 
         wqtask = maxtask.to_wq_task()
-        _logger.debug('PyMaster.submit: WQTask tag: %s' % wqtask.tag)
+        _logger.debug('Master.submit: WQTask tag: %s' % wqtask.tag)
 
         self._wq.submit(wqtask)
 
@@ -407,7 +403,7 @@ class PyMaster(object):
 
 class Mapper(object):
 
-    def __init__(self, function, modules=Modules(), master=PyMaster(debug='all')):
+    def __init__(self, function, modules=Modules(), master=Master(debug='all')):
 
         self.function = function
         self.modules  = modules
@@ -429,65 +425,6 @@ class Mapper(object):
 
 
 
-    
-
-
-def worker():
-
-    print 'worker: starting'
-
-    context = zmq.Context()
-    sock    = context.socket(zmq.PULL)
-    sock.connect('tcp://*:%d' % PORT_MASTER)
-
-    outsock = context.socket(zmq.PUSH)
-    outsock.bind('tcp://*:%d' % PORT_POOL)
-
-    while True:
-        obj = sock.recv_pyobj()
-
-        if type(obj) is bool and not obj:
-            break
-        # else:
-        #     print 'worker: got object', type(obj), obj
-
-    outsock.send_pyobj('OK')
-
-
-def master(n):
-
-    print 'master: starting'
-
-    context = zmq.Context()
-    sock  = context.socket(zmq.PUSH)
-    sock.bind('tcp://*:%d' % PORT_MASTER)
-
-    insock = context.socket(zmq.PULL)
-    insock.connect('tcp://*:%d' % PORT_POOL)
-
-    for i in xrange(n):
-        sock.send_pyobj(i)
-    sock.send_pyobj(False)
-    res = insock.recv_pyobj()
-    print 'Master got', res
-
-
-
-def main():
-
-    worker_proc = multiprocessing.Process(target=worker, args=())
-    worker_proc.start()
-
-    n = 400000
-    import time
-    start = time.time()
-    master(n)
-    end = time.time()
-    duration = end - start
-    msg_per_sec = n / float(duration)
-    print n, duration
-    print 'Duration:', duration
-    print 'Message/sec:', msg_per_sec
 
 
 def test_module():
@@ -548,7 +485,7 @@ def test_pool():
 
 
 def test_wq():
-    master = PyMaster(debug='all')
+    master = Master(debug='all')
 
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
@@ -600,7 +537,6 @@ def test():
 
 
 if __name__ == '__main__':
-    ezlog.set_level(ezlog.DEBUG, __name__)
+    ezlog.set_level(ezlog.INFO, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
     test()
-
