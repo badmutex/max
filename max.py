@@ -70,8 +70,9 @@ class Task(object):
         self.write_wrapper(Task.WRAPPER_NAME)
         self.write_worker(Task.WORKER_NAME)
 
-        with open(Task.IN_NAME, 'w') as fd:
+        with open(self.infile, 'w') as fd:
             marshal.dump(self.function.func_code, fd)
+            _logger.debug('Task: marsheled user function %s to %s' % (self.function.func_name, self.infile))
 
         task = workqueue.Task('./%(wrapper)s >wq.log' % {'wrapper' : Task.WRAPPER_NAME})
         task.specify_input_file(Task.WRAPPER_NAME, Task.WRAPPER_NAME)
@@ -83,7 +84,7 @@ class Task(object):
 
         task.specify_output_file(os.path.join(Task.WORKAREA, chunkname(self.chunkid)), Task.WORKER_RESULTS)
         for outfile in Task.WORKER_RETURN:
-            local = os.path.join(Task.WORKAREA, 'chunk-%04d-%s' % (self.chunkid, outfile), outfile)
+            local = os.path.join(Task.WORKAREA, 'chunk-%04d-%s' % (self.chunkid, outfile))
             task.specify_output_file(local, outfile)
 
         return task
@@ -115,7 +116,7 @@ class Task(object):
     def _pyworker(self):
         import dax
 
-        import marshal, types, inspect
+        import codeop, marshal, types, inspect
 
         import sys
         import os
@@ -139,13 +140,9 @@ class Task(object):
             fd_log.write('Loading function and arguments\n')
             with open(infile) as fd:
                 code = marshal.load(fd)
-                func = types.FunctionType(code, locals(), 'userfunc')
-
+                func = types.FunctionType(code, globals(), 'userfunc')
                 fd_log.write('Loaded function\n')
-                fd_log.write('\tType: %s\n' % type(code))
-                fd_log.write('\tCode: %s\n' % code)
-                fd_log.write('\tFunction: %s\n' % func)
-                fd_log.write('\tSourcecode: %s\n' % '\n\t\t'.join(inspect.getsource(func).split('\n')))
+
 
 
             for path in paramfiles:
@@ -171,7 +168,7 @@ class Task(object):
 
                     try:
                         results = func(path)
-                    except e:
+                    except Exception, e:
                         fd_log.write('\tFailed to work on %s: %s\n' % (path, e))
                         EXITCODE = 1
                         continue
@@ -371,13 +368,16 @@ class Master(object):
         # outsocket.bind(self.address(PORT_MASTER))
 
         _logger.info('Master: WQ name: %s' % self.name)
-        WQ        = workqueue.WorkQueue(workqueue.WORK_QUEUE_RANDOM_PORT, name=self.name)
+        WQ        = workqueue.WorkQueue(port=9987, # workqueue.WORK_QUEUE_RANDOM_PORT,
+                                        name='max', catalog=True, exclusive=False)
+        WQ.specify_algorithm(workqueue.WORK_QUEUE_SCHEDULE_FCFS)
+        workqueue.set_debug_flag('all')
 
         _logger.info('Master: PULLing from %s' % self.address(inport))
         _logger.info('Master: PUSHing to %s' % self.address(self.pushport))
 
         _logger.info('Master: Sending my listening port %d to the pool' % inport)
-        outsocket.send_pyobj(inport, zmq.NOBLOCK)
+        # outsocket.send_pyobj(inport, zmq.NOBLOCK)
 
         while True:
 
@@ -393,6 +393,7 @@ class Master(object):
                 _logger.debug('Master: Received Task %s' % type(task))
                 wqtask = task.to_wq_task()
 
+                _logger.debug('Master: submitting task to WorkQueue')
                 WQ.submit(wqtask)
 
             else:
@@ -582,39 +583,88 @@ def test_start_master():
     master = Master()
     master()
 
+def test_dax_read_path(path):
+    import re
+    re_gen = re.compile(r'%(sep)sresults-([0-9]+)' % {'sep':os.sep})
+    r,c = dax.read_cannonical_traj(path)
+    m = re_gen.search(path)
 
-def test():
+    if not m:
+        raise ValueError, 'Cannot parse generation from %s' % path
+
+    g = int(m.group(1))
+
+    return r,c,g
+
+
+
+def test_pool():
 
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
-    def read_path(path):
-        import re
-        re_gen = re.compile(r'%(sep)sresults-([0-9]+)' % {'sep':os.sep})
-        r,c = dax.read_cannonical_traj(path)
-        m = re_gen.search(path)
-
-        if not m:
-            raise ValueError, 'Cannot parse generation from %s' % path
-
-        g = int(m.group(1))
-
-        return r,c,g
-
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
-    daxproj.load_file(read_path, 'p10009.xtclist.test')
+    daxproj.load_file(test_dax_read_path, 'p10009.xtclist.test2')
     data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
 
     pool = Pool(modules=modules, name='max')
-    pool.process(data, MyFunc, None, chunksize=500)
+    pool.process(data, MyFunc, None, chunksize=5)
 
+
+
+def test_wq():
+    wq = workqueue.WorkQueue(port=workqueue.WORK_QUEUE_RANDOM_PORT, name='max', catalog=True, exclusive=False)
+    wq.specify_algorithm(workqueue.WORK_QUEUE_SCHEDULE_FCFS)
+    workqueue.set_debug_flag('all')
+
+    modules = Modules()
+    modules.add_modulefiles('~/Public/modulefiles')
+    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+
+    daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
+    daxproj.load_file(test_dax_read_path, 'p10009.xtclist.test2')
+    data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
+    data = lazy_chunk(data, 5)
+
+    for i, d in enumerate(data):
+        task = Task(MyFunc, d, modules=modules, chunkid=i)
+        task = task.to_wq_task()
+        wq.submit(task)
+
+        # print 'creating', i
+        # task = workqueue.Task('echo hello >outfile.%d' % i)
+        # task.specify_output_file('outfile.%d' % i, 'outfile.%d' % i)
+        # print 'submitting', i
+        # wq.submit(task)
+
+    while not wq.empty():
+        task = wq.wait(1)
+        print 'got task'
+
+
+def test_marshaling():
+    import marshal, types
+
+    with open('test.pkl', 'w') as fd:
+        marshal.dump(MyFunc.func_code, fd)
+
+    with open('test.pkl') as fd:
+        code = marshal.load(fd)
+
+    print code
+    func = types.FunctionType(code, globals())
+    print func(42)
+
+
+def test():
+    pass
 
 
 if __name__ == '__main__':
-    ezlog.set_level(ezlog.INFO, __name__)
+    ezlog.set_level(ezlog.DEBUG, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
-    test()
+    test_wq()
 
 
 # if __name__ == '__main__':
