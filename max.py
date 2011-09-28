@@ -4,12 +4,16 @@ import ezlog
 
 import zmq
 import workqueue
+import numpy as np
 
 import os
-import stat
 import sys
+import glob
+import stat
+import shutil
 import inspect
 import marshal
+import tempfile
 import itertools
 import multiprocessing
 import cPickle as pickle
@@ -75,6 +79,8 @@ class Task(object):
             _logger.debug('Task: marsheled user function %s to %s' % (self.function.func_name, self.infile))
 
         task = workqueue.Task('./%(wrapper)s >wq.log' % {'wrapper' : Task.WRAPPER_NAME})
+        task.tag = str(self.chunkid)
+
         task.specify_input_file(Task.WRAPPER_NAME, Task.WRAPPER_NAME)
         task.specify_input_file(Task.WORKER_NAME, Task.WORKER_NAME)
         task.specify_input_file(Task.IN_NAME, Task.IN_NAME)
@@ -297,30 +303,36 @@ class Modules(object):
 class Result(object):
 
     def __init__(self, wqtask):
-        chunkid = int(wqtask.tag)
-        tempdir = tempfile.mkdtemp()
+        self.chunkid = int(wqtask.tag)
+        self.tempdir = tempfile.mkdtemp(prefix='max-result')
         self.data = list()
+
+        self.result = os.path.join(Task.WORKAREA, chunkname(self.chunkid))
 
 
     def load(self):
 
         cmd = 'tar -C %(workarea)s -xvf %(tarfile)s' % {
-            'workarea' : tempdir,
-            'tarfile' : chunkname(chunkid) }
+            'workarea' : self.tempdir,
+            'tarfile' : self.result }
         print 'Executing:', cmd
         os.system(cmd)
 
-        pattern = os.path.join(tempdir, 'RUN*/CLONE*/GEN*.dat')
+        pattern = os.path.join(self.tempdir, 'RUN*/CLONE*/GEN*.dat')
         for datafile in glob.iglob(pattern):
             run, clone, gen = dax.read_cannonical(datafile)
-            results = np.loadtxt(datafile, delimiter=',', unpack=True, dtype=str)
-            self.data.append((run, clone, gen, results[-1]))
+            results         = np.loadtxt(datafile, delimiter=',', unpack=True, dtype=str)
+            data            = results[-1]
+            frames          = np.arange(0, len(data), step=1, dtype=int)
+            self.data.append((run, clone, gen, frames, data))
+
 
     def __iter__(self):
         return iter(self.data)
-        
 
 
+    def __del__(self):
+        shutil.rmtree(self.tempdir, ignore_errors=True)
 
 
 class Master(object):
@@ -409,6 +421,75 @@ class Master(object):
         _logger.info('Master: finishing up')
         insocket.close()
         outsocket.close()
+
+
+
+class WaitExceeded (Exception): pass
+
+
+class PyMaster(object):
+    """
+    Wrapper around WQ master
+    """
+
+    def __init__(self, name='max', catalog=True, exclusive=False, port=workqueue.WORK_QUEUE_RANDOM_PORT, debug=None):
+
+        self.name      = name
+        self.catalog   = catalog
+        self.exclusive = exclusive
+        self.port      = port
+        self.debug     = debug
+
+        self._wq = None
+
+
+    def start(self):
+
+        _logger.debug('PyMaster: Starting')
+
+        wq = workqueue.WorkQueue(port=self.port,
+                                 name=self.name,
+                                 catalog=self.catalog,
+                                 exclusive=self.exclusive)
+
+        if type(self.debug) is str and self.debug:
+            workqueue.set_debug_flag(self.debug)
+
+        self._wq = wq
+
+    def submit(self, maxtask):
+        if self._wq is None:
+            self.start()
+
+        _logger.debug('PyMaster: submitting task %s' % maxtask)
+
+        wqtask = maxtask.to_wq_task()
+        _logger.debug('PyMaster.submit: WQTask tag: %s' % wqtask.tag)
+
+        self._wq.submit(wqtask)
+
+
+    def empty(self):
+        return self._wq.empty()
+
+    def recv(self, block=True, wait=9999):
+
+        def get(w=wait): return self._wq.wait(w)
+
+        if block:
+            while not self._wq.empty():
+                wqtask = get(w=1)
+                if wqtask: break
+        else:
+            wqtask = get()
+
+        if wqtask:
+            result = Result(wqtask)
+            result.load()
+            return result
+        else:
+            raise WaitExceeded, 'Did wait time %s exceeded' % wait
+
 
 
 class Pool(object):
@@ -614,9 +695,7 @@ def test_pool():
 
 
 def test_wq():
-    wq = workqueue.WorkQueue(port=workqueue.WORK_QUEUE_RANDOM_PORT, name='max', catalog=True, exclusive=False)
-    wq.specify_algorithm(workqueue.WORK_QUEUE_SCHEDULE_FCFS)
-    workqueue.set_debug_flag('all')
+    master = PyMaster(debug='all')
 
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
@@ -629,18 +708,14 @@ def test_wq():
 
     for i, d in enumerate(data):
         task = Task(MyFunc, d, modules=modules, chunkid=i)
-        task = task.to_wq_task()
-        wq.submit(task)
+        master.submit(task)
 
-        # print 'creating', i
-        # task = workqueue.Task('echo hello >outfile.%d' % i)
-        # task.specify_output_file('outfile.%d' % i, 'outfile.%d' % i)
-        # print 'submitting', i
-        # wq.submit(task)
-
-    while not wq.empty():
-        task = wq.wait(1)
-        print 'got task'
+    print 'Getting results'
+    while not master.empty():
+        try:
+            for result in  master.recv(1):
+                print result
+        except WaitExceeded: pass
 
 
 def test_marshaling():
