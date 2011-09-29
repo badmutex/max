@@ -530,7 +530,7 @@ def _test():
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
     daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
     daxproj.write_dax()
-    data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
+    data = daxproj.get_files('*.xtc', ignoreErrors=True)
 
     raxproj = rax.Project()
 
