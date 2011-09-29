@@ -2,7 +2,6 @@
 import dax
 import ezlog
 
-import zmq
 import workqueue
 import numpy as np
 
@@ -15,8 +14,6 @@ import inspect
 import marshal
 import tempfile
 import itertools
-import multiprocessing
-import cPickle as pickle
 
 _logger = ezlog.setup(__name__)
 
@@ -104,8 +101,7 @@ class Task(object):
         code = map(lambda s: s.replace(' ','', 8), code)
 
         _logger.debug('Task.write_worker: code:')
-        for line in code:
-            _logger.debug('\t' + line)
+        _logger.debug('\n\t\t\t\t\t'.join(['\n'] + code))
 
         code = '\n'.join(code)
 
@@ -251,8 +247,7 @@ function module()
         executable = lang()
 
         _logger.debug('Task.write_wrapper: executable:')
-        for line in executable.split('\n'):
-            _logger.debug('\t' + line)
+        _logger.debug('\n\t\t\t\t\t'.join(['\n'] + executable.split('\n')))
 
         with open(outfile, 'w') as fd:
             fd.write(executable)
@@ -415,11 +410,13 @@ class Mapper(object):
             task = Task(self.function, chunk, modules=self.modules, chunkid=chunkid)
             self.master.submit(task)
 
-        ## TODO: put results into R@X Project
         while not self.master.empty():
             try:
-                for result in self.master.recv():
-                    print result
+                for run,clone,gen,frames,data in self.master.recv():
+                    try:
+                        raxproject.add_generation(run,clone,gen,data)
+                    except ValueError, e:
+                        _logger.warning(str(e))
             except WaitExceeded: pass
 
 
@@ -524,16 +521,23 @@ def _test_marshaling():
 
 def _test():
 
+    import rax
+
     modules = Modules()
     modules.add_modulefiles('~/Public/modulefiles')
     modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
     daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
+    daxproj.write_dax()
     data = daxproj.get_files('.+\.xtc', ignoreErrors=True)
 
+    raxproj = rax.Project()
+
     mapper = Mapper(_test_MyFunc, modules)
-    mapper.process(data, None, chunksize=5)
+    mapper.process(data, raxproj, chunksize=5)
+
+    raxproj.write('/tmp/raxproj')
 
 
 if __name__ == '__main__':
