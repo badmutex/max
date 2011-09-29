@@ -280,11 +280,11 @@ class Modules(object):
         return '\n'.join(get_str())
 
 
-    def add_modulefiles(self, *paths):
+    def use(self, *paths):
         sanitized = map(dax.sanitize, paths)
         self._modulefiles.append(sanitized)
 
-    def add_modules(self, *modules):
+    def load(self, *modules):
         self._modules.append(modules)
 
 
@@ -426,10 +426,10 @@ class Mapper(object):
 
 def _test_module():
     modules = Modules()
-    modules.add_modulefiles('~/Public/modulefiles')
-    modules.add_modules('python/2.7.1', 'numpy', 'scipy', 'ezlog/deve', 'ezpool/devel')
-    modules.add_modulefiles('~rnowling/Public/modulefiles')
-    modules.add_modules('protomol/a', 'protomol/b')
+    modules.use('~/Public/modulefiles')
+    modules.load('python/2.7.1', 'numpy', 'scipy', 'ezlog/deve', 'ezpool/devel')
+    modules.load('~rnowling/Public/modulefiles')
+    modules.load('protomol/a', 'protomol/b')
     print modules.get_modules_script()
 
 
@@ -440,8 +440,8 @@ def _test_MyFunc(path):
 
 def _test_Task():
     modules = Modules()
-    modules.add_modulefiles('~/Public/modulefiles')
-    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+    modules.use('~/Public/modulefiles')
+    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
     data   = 'foo/RUN0001/CLONE0002/GEN0003 foo/RUN0004/CLONE0005/GEN0006'.split()
     task   = Task(_test_MyFunc, data)
     wqtask = task.to_wq_task()
@@ -469,8 +469,8 @@ def _test_dax_read_path(path):
 def _test_pool():
 
     modules = Modules()
-    modules.add_modulefiles('~/Public/modulefiles')
-    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+    modules.use('~/Public/modulefiles')
+    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
     daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
@@ -485,8 +485,8 @@ def _test_wq():
     master = Master(debug='all')
 
     modules = Modules()
-    modules.add_modulefiles('~/Public/modulefiles')
-    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+    modules.use('~/Public/modulefiles')
+    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
     daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
@@ -524,8 +524,8 @@ def _test():
     import rax
 
     modules = Modules()
-    modules.add_modulefiles('~/Public/modulefiles')
-    modules.add_modules('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+    modules.use('~/Public/modulefiles')
+    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
     daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
