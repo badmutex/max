@@ -427,15 +427,18 @@ class Mapper(object):
 def _test_module():
     modules = Modules()
     modules.use('~/Public/modulefiles')
-    modules.load('python/2.7.1', 'numpy', 'scipy', 'ezlog/deve', 'ezpool/devel')
+    modules.load('python/2.7.1', 'numpy', 'scipy', 'ezlog/devel', 'ezpool/devel')
     modules.load('~rnowling/Public/modulefiles')
     modules.load('protomol/a', 'protomol/b')
     print modules.get_modules_script()
 
 
 def _test_MyFunc(path):
-        import numpy as np
-        return np.random.random_sample(42)
+    import gmx
+    import numpy as np
+
+    rmsd = gmx.g_rms()
+    return rmsd(f=path, s='/afs/crc.nd.edu/user/c/cabdulwa/Public/Research/md/ww/folded/14.pdb', n='/afs/crc.nd.edu/user/c/cabdulwa/Public/Research/md/ww/ndx/gmx/14/System.ndx')
 
 
 def _test_Task():
@@ -525,10 +528,10 @@ def _test():
 
     modules = Modules()
     modules.use('~/Public/modulefiles')
-    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
+    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel', 'gromacs', 'gmx/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
-    daxproj.load_file(_test_dax_read_path, 'p10009.xtclist.test2')
+    daxproj.load_file(_test_dax_read_path, 'tests/p10009.xtclist.test2')
     daxproj.write_dax()
     data = daxproj.get_files('*.xtc', ignoreErrors=True)
 
