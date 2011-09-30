@@ -71,7 +71,11 @@ class Task(object):
             marshal.dump(self.function.func_code, fd)
             _logger.debug('Task: marsheled user function %s to %s' % (self.function.func_name, self.infile))
 
-        task = workqueue.Task('./%(wrapper)s >wq.log' % {'wrapper' : Task.WRAPPER_NAME})
+        task = workqueue.Task('./%(wrapper)s %(infile)s %(proclogfile)s %(paramfiles)s >wq.log' % {
+                'wrapper' : Task.WRAPPER_NAME,
+                'infile'       : self.infile,
+                'proclogfile'  : self.proclogfile,
+                'paramfiles'   : ' '.join(self.data)})
         task.tag = str(self.chunkid)
 
         task.specify_input_file(Task.WRAPPER_NAME, Task.WRAPPER_NAME)
@@ -223,13 +227,10 @@ function module()
 
 %(load_modules)s
 
-./%(work)s %(infile)s %(proclogfile)s %(paramfiles)s >%(wqlogfile)s 2>&1
+./%(work)s $@ >%(wqlogfile)s 2>&1
 """ % { 'moduleshome'  : self.moduleshome,
         'load_modules' : self.modules.get_modules_script(),
         'work'         : self.workername,
-        'infile'       : self.infile,
-        'proclogfile'  : self.proclogfile,
-        'paramfiles'   : ' '.join(self.data),
         'wqlogfile'    : self.wqwlogfile,
         }
 
