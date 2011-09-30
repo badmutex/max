@@ -6,5 +6,7 @@ setup(name='max',
                    ],
       author = "Badi' Abdul-Wahid",
       author_email = 'abdulwahidc@gmail.com',
+      url = 'https://github.com/badi/max',
+      license = 'BSD',
       description = '(Mapping@X) Perform first-order analysis on Data@X data'
       )
