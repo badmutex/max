@@ -47,10 +47,14 @@ class Task(object):
 
     WORKAREA            = 'max.workarea'
 
-    def __init__(self, func, data, **kws):
+    def __init__(self, func, locations, **kws):
+        """
+        @param func (path -> [a])
+        @param locations ([Location])
+        """
 
         self.function    = func
-        self.data        = data
+        self.locations   = locations
 
         self.modules     = kws.pop('modules', Modules())
         self.moduleshome = kws.pop('moduleshome', Task.MODULES_HOME)
@@ -71,11 +75,15 @@ class Task(object):
             marshal.dump(self.function.func_code, fd)
             _logger.debug('Task: marsheled user function %s to %s' % (self.function.func_name, self.infile))
 
-        task = workqueue.Task('./%(wrapper)s %(infile)s %(proclogfile)s %(paramfiles)s >wq.log' % {
-                'wrapper' : Task.WRAPPER_NAME,
-                'infile'       : self.infile,
-                'proclogfile'  : self.proclogfile,
-                'paramfiles'   : ' '.join(self.data)})
+        urls = itertools.imap(lambda loc: loc.url, self.locations)
+        taskcmd = './%(wrapper)s %(infile)s %(proclogfile)s %(paramfiles)s >wq.log' % {
+            'wrapper' : Task.WRAPPER_NAME,
+            'infile'       : self.infile,
+            'proclogfile'  : self.proclogfile,
+            'paramfiles'   : ' '.join(urls)}
+        _logger.debug('Task: WQ Task command: %s' % taskcmd)
+
+        task = workqueue.Task(taskcmd)
         task.tag = str(self.chunkid)
 
         task.specify_input_file(Task.WRAPPER_NAME, Task.WRAPPER_NAME)
@@ -148,41 +156,42 @@ class Task(object):
 
 
             for path in paramfiles:
+                with dax.Location.location(path) as name:
 
-                fd_log.write('Processing: %s\n' % path)
+                    fd_log.write('Processing: %s as %s\n' % (path, name))
 
-                run, clone, gen = dax.read_cannonical(path)
+                    run, clone, gen = dax.read_cannonical(path)
 
-                fd_log.write('\tRUN %d CLONE %d GEN %d\n' % (run,clone,gen))
+                    fd_log.write('\tRUN %d CLONE %d GEN %d\n' % (run,clone,gen))
 
-                workarea        = dax.cannonical_traj(run, clone)
-                workarea        = os.path.join(tempdir, workarea)
-                target_name     = 'GEN%04d.dat' % gen
-                target          = os.path.join(workarea, target_name)
+                    workarea        = dax.cannonical_traj(run, clone)
+                    workarea        = os.path.join(tempdir, workarea)
+                    target_name     = 'GEN%04d.dat' % gen
+                    target          = os.path.join(workarea, target_name)
 
-                if not os.path.exists(workarea):
-                    fd_log.write('\tCreating workarea %s\n' % workarea)
-                    os.makedirs(workarea)
+                    if not os.path.exists(workarea):
+                        fd_log.write('\tCreating workarea %s\n' % workarea)
+                        os.makedirs(workarea)
 
-                with open(target, 'w') as fd:
+                    with open(target, 'w') as fd:
 
-                    fd_log.write('\t Applying %s\n' % func)
+                        fd_log.write('\t Applying %s\n' % func)
 
-                    try:
-                        results = func(path)
-                    except Exception, e:
-                        fd_log.write('\tFailed to work on %s: %s\n' % (path, e))
-                        EXITCODE = 1
-                        continue
+                        try:
+                            results = func(name)
+                        except Exception, e:
+                            fd_log.write('\tFailed to work on %s as %s: %s\n' % (path, name, e))
+                            EXITCODE = 1
+                            continue
 
-                    fd_log.write('\tWriting results\n')
+                        fd_log.write('\tWriting results\n')
 
-                    for frame, result in enumerate(results):
-                        line = '%(run)d,%(clone)d,%(gen)d,%(frame)d,%(result)s' % {
-                            'run' : run, 'clone' : clone, 'gen' : gen, 'frame' : frame,
-                            'result' : result}
+                        for frame, result in enumerate(results):
+                            line = '%(run)d,%(clone)d,%(gen)d,%(frame)d,%(result)s' % {
+                                'run' : run, 'clone' : clone, 'gen' : gen, 'frame' : frame,
+                                'result' : result}
 
-                        fd.write(line + '\n')
+                            fd.write(line + '\n')
 
 
             cwd = os.getcwd()
@@ -446,8 +455,10 @@ def _test_Task():
     modules = Modules()
     modules.use('~/Public/modulefiles')
     modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel')
-    data   = 'foo/RUN0001/CLONE0002/GEN0003 foo/RUN0004/CLONE0005/GEN0006'.split()
-    task   = Task(_test_MyFunc, data)
+    data   = 'chirp://localhost/foo/RUN0001/CLONE0002/GEN0003 chirp://localhost/foo/RUN0004/CLONE0005/GEN0006'.split()
+    data   = 'file:///foo/RUN0001/CLONE0002/GEN0003 file:///foo/RUN0004/CLONE0005/GEN0006'.split()
+    locs   = map(dax.Local, data)
+    task   = Task(_test_MyFunc, locs)
     wqtask = task.to_wq_task()
 
 
@@ -545,6 +556,6 @@ def _test():
 
 
 if __name__ == '__main__':
-    ezlog.set_level(ezlog.INFO, __name__)
+    ezlog.set_level(ezlog.DEBUG, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
-    _test()
+    _test_Task()
