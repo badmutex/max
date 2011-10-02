@@ -1,0 +1,7 @@
+build/*
+*.pyc
+max.workarea
+*.pkl
+tests/*
+work
+wrapper.sh
