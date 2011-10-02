@@ -40,13 +40,17 @@ modules.use('~cabdulwa/Public/modulefiles')
 modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel', 'gromacs', 'gmx')
 
 daxproj = dax.Project('/tmp/test', 'lcls', 'fah', 10009)
-daxproj.load_file(read_path, 'tests/p10009.xtclist.test')
+locations = dax.read_filelist('tests/p10009.xtclist.test2.chirp',
+                              kind='chirp',
+                              host='lclsstor01.crc.nd.edu',
+                              port=9987)
+daxproj.load_locations(read_path, locations)
 daxproj.write_dax()
-data = daxproj.get_files('*.xtc')
+data = daxproj.locations('*.xtc', files=True)
 
 raxproj = rax.Project()
 
 mapper = max.Mapper(rmsd, modules=modules)
-mapper.process(data, raxproj, chunksize=1)
+mapper.process(data, raxproj, chunksize=5)
 
 raxproj.write('/tmp/raxproj')

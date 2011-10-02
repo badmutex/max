@@ -80,7 +80,7 @@ class Task(object):
             'wrapper' : Task.WRAPPER_NAME,
             'infile'       : self.infile,
             'proclogfile'  : self.proclogfile,
-            'paramfiles'   : ' '.join(urls)}
+            'paramfiles'   : ' '.join(self.locations)}
         _logger.debug('Task: WQ Task command: %s' % taskcmd)
 
         task = workqueue.Task(taskcmd)
@@ -156,11 +156,13 @@ class Task(object):
 
 
             for path in paramfiles:
-                with dax.Location.location(path) as name:
+                run, clone, gen = dax.read_cannonical(path)
+
+                fd_log.write('Loading Location from %s\n' % path)
+
+                with dax.Location.from_file(path) as name:
 
                     fd_log.write('Processing: %s as %s\n' % (path, name))
-
-                    run, clone, gen = dax.read_cannonical(path)
 
                     fd_log.write('\tRUN %d CLONE %d GEN %d\n' % (run,clone,gen))
 
@@ -447,7 +449,8 @@ def _test_MyFunc(path):
     import gmx
     import numpy as np
 
-    rmsd = gmx.g_rms()
+    devnull = '/dev/null'
+    rmsd = gmx.g_rms(stdout=devnull, stderr=devnull)
     return rmsd(f=path, s='/afs/crc.nd.edu/user/c/cabdulwa/Public/Research/md/ww/folded/14.pdb', n='/afs/crc.nd.edu/user/c/cabdulwa/Public/Research/md/ww/ndx/gmx/14/System.ndx')
 
 
@@ -543,9 +546,11 @@ def _test():
     modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel', 'gromacs', 'gmx/devel')
 
     daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
-    daxproj.load_file(_test_dax_read_path, 'tests/p10009.xtclist.test2')
+    locations = dax.read_filelist('tests/p10009.xtclist.test2.chirp', kind='chirp', host='lclsstor01.crc.nd.edu', port=9987)
+    daxproj.load_locations(_test_dax_read_path, locations)
     daxproj.write_dax()
-    data = daxproj.get_files('*.xtc', ignoreErrors=True)
+
+    data = daxproj.locations('*.xtc', files=True)
 
     raxproj = rax.Project()
 
@@ -556,6 +561,9 @@ def _test():
 
 
 if __name__ == '__main__':
+    import rax
+
     ezlog.set_level(ezlog.DEBUG, __name__)
     ezlog.set_level(ezlog.INFO, dax.__name__)
-    _test_Task()
+    ezlog.set_level(ezlog.DEBUG, rax.__name__)
+    _test()
