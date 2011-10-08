@@ -20,13 +20,12 @@
 
 * Usage
   1. You define a python function that when submitted:
-	 - accepts
-	   a path to a file
-     - returns
-	   a list of values for every frame in that file
+	 - that:
+	   accepts: a path to a file
+       returns: a list of values for every frame in that file
   2. Use Modules to load dependencies
-	 Since your function may depend on external libraries or programs,
-	 you can create a Modules instance that loads these for you.
+	 - Since your function may depend on external libraries or programs,
+	   you can create a Modules instance that loads these for you.
   3. Load a D@X Project
   4. Create or load a R@X Project
   5. Curry your function if it needs has more than one parameter
