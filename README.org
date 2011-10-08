@@ -1,0 +1,75 @@
+
+* Description
+  Mapping@X (M@X) uses WorkQueue to perform first-order analysis on Data@X (D@X) data.
+  (The X in the name is a metavariable: this supports the Folding@Work (F@W) and Folding@Home (F@H) storage scheme).
+  The user just needs to define a function that accepts a single input file from the D@X Generation.
+  M@X sends the function out to workers connected to a WorkQueue master and returns the results.
+  The results are then stored in a Results@X (R@X) project which may then be used for higher-order analysis.
+
+
+* Dependencies
+  - [[http://python.org][Python 2.7]]
+  - [[http://numpy.scipy.org][Numpy]]
+  - [[http://cse.nd.edu/~ccl/software/workqueue][WorkQueue]]
+  - [[https://bitbucket.org/pbui/python-workqueue/overview][Python WorkQueue]]
+  - [[https://github.com/badi/dax][Data@X]]
+  - [[https://github.com/badi/rax][Results@X]]
+  - [[https://github.com/badi/ezlog][ezlog]]
+  - [[https://github.com/badi/curry][curry]]
+
+
+* Usage
+** You define a python function that when submitted:
+  - accepts
+	a path to a file
+  - returns
+	a list of values for every frame in that file
+** Use Modules to load dependencies
+   Since your function may depend on external libraries or programs,
+   you can create a Modules instance that loads these for you.
+** Load a D@X Project
+** Create or load a R@X Project
+** Curry your function if it needs has more than one parameter
+** Instantiate a max.Mapper object using your analysis function and process the data
+** Save the R@X Project to disk
+
+
+* Important
+  The analysis function should be completely self-contained.
+  This function when run accepts a single parameter -- the path to the file in the D@X project -- and returns a list of values for every frame in the parameterized file.
+
+  For example, if your project contains a file
+  root/RUN1/CLONE2/GEN3/sim.xtc, and you have an analysis function
+  Process, it will be called
+  #+BEGIN_SRC python
+  path = 'root/RUN1/CLONE2/GEN3/sim.xtc'
+  Process(path)
+  #+END_SRC
+
+  If you want to generalize a function you need to use the curry
+  module to partially apply parameters before submitting it to M@X
+
+
+* Example
+  #+BEGIN_SRC python
+  import dax, max, rax
+
+  def analysis(path):
+      import numpy as np
+	  return np.random.random_sample(42)
+
+  modules = max.Modules()
+  modules.use('~/Public/modulefiles')
+  modules.load('python/2.7.1', 'numpy')
+
+  daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
+  daxproj.load_dax()
+  data = daxproj.get_files('*.xtc')
+
+  raxproj = rax.Project()
+
+  mapper = Mapper(analysis, modules=modules)
+  mapper.process(data, raxproj, chunksize=5)
+
+  raxproj.write('/tmp/raxproj')
+  #+END_SRC
