@@ -1,5 +1,6 @@
 
 import dax
+import curry
 import ezlog
 
 import workqueue
@@ -11,11 +12,16 @@ import glob
 import stat
 import shutil
 import inspect
-import marshal
 import tempfile
 import itertools
+import cPickle as pickle
 
 _logger = ezlog.setup(__name__)
+
+
+def abspath(path):
+    return os.path.expandvars(os.path.expanduser(os.path.abspath(path)))
+
 
 def lazy_chunk(iterable, chunksize):
     if chunksize <= 0:
@@ -53,6 +59,9 @@ class Task(object):
         @param locations ([Location])
         """
 
+        if not type(func) == curry.curry:
+            func = curry.curry(func)
+
         self.function    = func
         self.locations   = locations
 
@@ -72,8 +81,8 @@ class Task(object):
         self.write_worker(Task.WORKER_NAME)
 
         with open(self.infile, 'w') as fd:
-            marshal.dump(self.function.func_code, fd)
-            _logger.debug('Task: marsheled user function %s to %s' % (self.function.func_name, self.infile))
+            pickle.dump(self.function, fd)
+            _logger.debug('Task: pickled user function %s to %s' % (self.function.func_name, self.infile))
 
         urls = itertools.imap(lambda loc: loc.url, self.locations)
         taskcmd = './%(wrapper)s %(infile)s %(proclogfile)s %(paramfiles)s >wq.log' % {
@@ -126,12 +135,13 @@ class Task(object):
     def _pyworker(self):
         import dax
 
-        import codeop, marshal, types, inspect
+        import codeop, inspect
 
         import sys
         import os
         import shutil
         import tempfile
+        import cPickle as pickle
 
         RESULTS_NAME = 'results.tar.bz2'
 
@@ -149,10 +159,8 @@ class Task(object):
 
             fd_log.write('Loading function and arguments\n')
             with open(infile) as fd:
-                code = marshal.load(fd)
-                func = types.FunctionType(code, globals(), 'userfunc')
-                fd_log.write('Loaded function\n')
-
+                func = pickle.load(fd)
+                fd_log.write('Loaded function %s\n' % func)
 
 
             for path in paramfiles:
@@ -418,7 +426,9 @@ class Mapper(object):
 
     def process(self, daxdata, raxproject, chunksize=1):
 
-        for chunkid, chunk in enumerate(lazy_chunk(daxdata, chunksize)):
+        data = itertools.imap(abspath, daxdata)
+
+        for chunkid, chunk in enumerate(lazy_chunk(data, chunksize)):
             task = Task(self.function, chunk, modules=self.modules, chunkid=chunkid)
             self.master.submit(task)
 
@@ -537,16 +547,43 @@ def _test_marshaling():
     print func(42)
 
 
+def _test_nth_arity(x,**kws):
+    y = kws.pop('y', 1)
+    z = kws.pop('z', 1)
+    return x * y * z
+
+
+
+def _test_curried_marshaling():
+    import cPickle as pickle
+    import curry
+    import functools
+
+    f = curry.curry(_test_nth_arity, y=6)
+    g = functools.partial(f, z=9)
+    print f(3, z=9), g(3) # 162 162
+
+    with open('test.pkl', 'w') as fd:
+        pickle.dump(f, fd)
+
+    with open('test.pkl') as fd:
+        h = pickle.load(fd)
+    k = functools.partial(h, z=9)
+    print h(3, z=9), k(3) # 162 162
+
+
 def _test():
 
     import rax
+    import curry
 
     modules = Modules()
     modules.use('~/Public/modulefiles')
-    modules.load('python/2.7.1', 'numpy', 'ezlog/devel', 'ezpool/devel', 'dax/devel', 'gromacs', 'gmx/devel')
+    modules.load('python/2.7.1', 'fax/devel')
 
-    daxproj = dax.Project('/tmp/test', 'lcls','fah', 10009)
+    daxproj = dax.Project('test', 'lcls','fah', 10009)
     locations = dax.read_filelist('tests/p10009.xtclist.test2.chirp', kind='chirp', host='lclsstor01.crc.nd.edu', port=9987)
+    locations = dax.read_filelist('tests/p10009.xtclist.test2')
     daxproj.load_locations(_test_dax_read_path, locations)
     daxproj.write_dax()
 
@@ -554,7 +591,7 @@ def _test():
 
     raxproj = rax.Project()
 
-    mapper = Mapper(_test_MyFunc, modules)
+    mapper = Mapper(curry.curry(_test_MyFunc), modules)
     mapper.process(data, raxproj, chunksize=5)
 
     raxproj.write('/tmp/raxproj')
