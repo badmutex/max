@@ -19,19 +19,19 @@
 
 
 * Usage
-** You define a python function that when submitted:
-  - accepts
-	a path to a file
-  - returns
-	a list of values for every frame in that file
-** Use Modules to load dependencies
-   Since your function may depend on external libraries or programs,
-   you can create a Modules instance that loads these for you.
-** Load a D@X Project
-** Create or load a R@X Project
-** Curry your function if it needs has more than one parameter
-** Instantiate a max.Mapper object using your analysis function and process the data
-** Save the R@X Project to disk
+  1. You define a python function that when submitted:
+	 - accepts
+	   a path to a file
+     - returns
+	   a list of values for every frame in that file
+  2. Use Modules to load dependencies
+	 Since your function may depend on external libraries or programs,
+	 you can create a Modules instance that loads these for you.
+  3. Load a D@X Project
+  4. Create or load a R@X Project
+  5. Curry your function if it needs has more than one parameter
+  6. Instantiate a max.Mapper object using your analysis function and process the data
+  7. Save the R@X Project to disk
 
 
 * Important
