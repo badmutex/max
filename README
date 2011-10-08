@@ -12,14 +12,14 @@ The results are then stored in a Results@X (R@X) project which may then be used 
 Dependencies
 ============
 
-  Python 2.7			: http://python.org
-  Numpy	 				: http://numpy.scipy.org
-  WorkQueue				: http://cse.nd.edu/~ccl/software/workqueue
-  Python WorkQueue		: https://bitbucket.org/pbui/python-workqueue/overview
-  Data@X				: https://github.com/badi/dax
-  Results@X				: https://github.com/badi/rax  
+  Python 2.7            : http://python.org
+  Numpy                 : http://numpy.scipy.org
+  WorkQueue             : http://cse.nd.edu/~ccl/software/workqueue
+  Python WorkQueue      : https://bitbucket.org/pbui/python-workqueue/overview
+  Data@X                : https://github.com/badi/dax
+  Results@X             : https://github.com/badi/rax
   ezlog                 : https://github.com/badi/ezlog
-  curry					: https://github.com/badi/curry
+  curry                 : https://github.com/badi/curry
 
 
 Usage
