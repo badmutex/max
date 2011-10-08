@@ -19,6 +19,7 @@ Dependencies
   Data@X				: https://github.com/badi/dax
   Results@X				: https://github.com/badi/rax  
   ezlog                 : https://github.com/badi/ezlog
+  curry					: https://github.com/badi/curry
 
 
 Usage
@@ -44,13 +45,14 @@ Important
 =========
 
 The analysis function should be completely self-contained.
-This function accepts a single parameter -- the path to the file in the D@X project -- and returns a list of values for every frame in the parameterized file.
+This function when run accepts a single parameter -- the path to the file in the D@X project -- and returns a list of values for every frame in the parameterized file.
 
 For example, if your project contains a file root/RUN1/CLONE2/GEN3/sim.xtc, and you have an analysis function Process, it will be called
   path = 'root/RUN1/CLONE2/GEN3/sim.xtc'
   Process(path)
 
-Since Process is being executed on a different node (and in a different file!) than where it was defined, the analysis will fail if Process is dependent on some state external to it's definition.
+If you want to generalize a function you need to use the curry module
+to partially apply parameters before submitting it to M@X
 
 
 Example
