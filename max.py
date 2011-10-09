@@ -85,7 +85,7 @@ class Task(object):
             _logger.debug('Task: pickled user function %s to %s' % (self.function.func_name, self.infile))
 
         urls = itertools.imap(lambda loc: loc.url, self.locations)
-        taskcmd = './%(wrapper)s %(infile)s %(proclogfile)s %(paramfiles)s >wq.log' % {
+        taskcmd = './%(wrapper)s %(infile)s %(proclogfile)s %(paramfiles)s >wq.log 2>&1' % {
             'wrapper' : Task.WRAPPER_NAME,
             'infile'       : self.infile,
             'proclogfile'  : self.proclogfile,
