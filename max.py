@@ -436,12 +436,16 @@ class Mapper(object):
 
     def process(self, daxdata, raxproject, chunksize=1):
 
+        _logger.info('Mapping %s over %s using %s' % (self.function, daxdata, self.modules))
+
         data = itertools.imap(abspath, daxdata)
 
+        _logger.info('Submitting jobs')
         for chunkid, chunk in enumerate(lazy_chunk(data, chunksize)):
             task = Task(self.function, chunk, modules=self.modules, chunkid=chunkid)
             self.master.submit(task)
 
+        _logger.info('Recieving results')
         while not self.master.empty():
             try:
                 for run,clone,gen,frames,data in self.master.recv():
