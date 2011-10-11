@@ -332,7 +332,12 @@ class Result(object):
         pattern = os.path.join(self.tempdir, 'RUN*/CLONE*/GEN*.dat')
         for datafile in glob.iglob(pattern):
             run, clone, gen = dax.read_cannonical(datafile)
-            results         = np.loadtxt(datafile, delimiter=',', unpack=True, dtype=str)
+            try:
+                results         = np.loadtxt(datafile, delimiter=',', unpack=True, dtype=str)
+            except IOError, e:
+                r,c,g = dax.read_cannonical(datafile)
+                _logger.error('Could not load data from (%d,%d,%d): %s' % (r,c,g,e))
+                continue
             data            = results[-1]
             frames          = np.arange(0, len(data), step=1, dtype=int)
             self.data.append((run, clone, gen, frames, data))
