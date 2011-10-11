@@ -367,7 +367,11 @@ class Master(object):
         self.catalog   = catalog
         self.exclusive = exclusive
         self.port      = port
-        self.debug     = debug
+
+        if _logger.getEffectiveLevel() < ezlog.INFO:
+            self.debug     = True
+        else:
+            self.debug     = False
 
         self._wq = None
 
