@@ -323,10 +323,11 @@ class Result(object):
 
     def load(self):
 
-        cmd = 'tar -C %(workarea)s -xvf %(tarfile)s' % {
+        cmd = 'tar -C %(workarea)s -xvf %(tarfile)s %(redir)s' % {
             'workarea' : self.tempdir,
-            'tarfile' : self.result }
-        print 'Executing:', cmd
+            'tarfile' : self.result,
+            'redir'  : '' if _logger.getEffectiveLevel() < ezlog.INFO else '>/dev/null'}
+        _logger.debug('Executing: %s' % cmd)
         os.system(cmd)
 
         pattern = os.path.join(self.tempdir, 'RUN*/CLONE*/GEN*.dat')
